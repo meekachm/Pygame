@@ -7,6 +7,10 @@ pygame.init()
 # Configure the screen
 screen = pygame.display.set_mode([500, 500])
 
+# Define lanes
+lanes = [93, 218, 343]
+
+
 # Base class for game objects
 class GameObject(pygame.sprite.Sprite):
     def __init__(self, x, y, image):
@@ -14,8 +18,11 @@ class GameObject(pygame.sprite.Sprite):
         self.surf = pygame.image.load(image)
         self.x = x
         self.y = y
+        self.rect = self.surf.get_rect()
 
     def render(self, screen):
+        self.rect.x = self.x
+        self.rect.y = self.y
         screen.blit(self.surf, (self.x, self.y))
 
 
@@ -23,7 +30,7 @@ class GameObject(pygame.sprite.Sprite):
 class Apple(GameObject):
     def __init__(self):
         super(Apple, self).__init__(0, 0, 'apple.png')
-        self.dy = 0.5
+        self.dy = 2  # Initial speed
         self.direction = choice([-1, 1])
         self.reset()
 
@@ -36,24 +43,35 @@ class Apple(GameObject):
         self.x = choice(lanes)
         self.y = -64 if self.direction == 1 else 500
         self.direction = choice([-1, 1])
+        
+    def increase_speed(self, increment):
+        self.dy += increment
 
 
 # Strawberry class, inherits from GameObject
 class Strawberry(GameObject):
     def __init__(self):
         super(Strawberry, self).__init__(0, 0, 'strawberry.png')
-        self.dx = 0.5
+        self.dy = 2  # Initial speed
         self.direction = choice([-1, 1])
+        self.reset()
 
     def move(self):
-        self.x += self.dx * self.direction
-        if (self.direction == 1 and self.x > 500) or (self.direction == -1 and self.x < -64):
+        if self.direction == -1:
+            self.x -= self.dy
+        else:
+            self.x += self.dy
+
+        if self.x < -64 or self.x > 500:
             self.reset()
 
     def reset(self):
         self.x = -64 if self.direction == 1 else 500
         self.y = choice(lanes)
         self.direction = choice([-1, 1])
+        
+    def increase_speed(self, increment):
+        self.dy += increment
 
 
 # Player class, inherits from GameObject
@@ -113,15 +131,41 @@ class Player(GameObject):
 class Bomb(GameObject):
     def __init__(self):
         super(Bomb, self).__init__(0, 0, 'bomb.png')
-        self.dx = 2
-        self.dy = 2
+        self.dx = 2  # Initial speed
+        self.dy = 2  # Initial speed
         self.direction = choice(['up', 'down', 'left', 'right'])
         self.reset()
 
+    def move(self):
+        if self.direction == 'up':
+            self.y -= self.dy
+        elif self.direction == 'down':
+            self.y += self.dy
+        elif self.direction == 'left':
+            self.x -= self.dx
+        elif self.direction == 'right':
+            self.x += self.dx
+
+        # Check if the Bomb is out of the screen, then reset
+        if self.x < -64 or self.x > 500 or self.y < -64 or self.y > 500:
+            self.reset()
+
     def reset(self):
-        self.x = randint(50, 450)
-        self.y = randint(50, 450)
-        self.direction = choice(['up', 'down', 'left', 'right'])
+        direction = choice(['up', 'down', 'left', 'right'])
+        self.direction = direction
+
+        if direction == 'up':
+            self.x = randint(0, 500)
+            self.y = 500
+        elif direction == 'down':
+            self.x = randint(0, 500)
+            self.y = -64
+        elif direction == 'left':
+            self.x = 500
+            self.y = randint(0, 500)
+        elif direction == 'right':
+            self.x = -64
+            self.y = randint(0, 500)
 
 
 # Create instances of Apple, Strawberry, Player, and Bomb
@@ -132,12 +176,18 @@ bomb = Bomb()
 
 # Make a group
 all_sprites = pygame.sprite.Group()
+fruit_sprites = pygame.sprite.Group()
 
-# Add sprites to group
+# Add player and bomb to all_sprites group
 all_sprites.add(player)
-all_sprites.add(*apples)
-all_sprites.add(*strawberries)
 all_sprites.add(bomb)
+
+# Add individual apples and strawberries to fruit_sprites group
+for apple in apples:
+    fruit_sprites.add(apple)
+
+for strawberry in strawberries:
+    fruit_sprites.add(strawberry)
 
 # Get the clock
 clock = pygame.time.Clock()
@@ -145,14 +195,16 @@ clock = pygame.time.Clock()
 # Lanes
 lanes = [93, 218, 343]
 
-# Create the game loop
+# Create a variable to track player's score
+player_score = 0
+
+
+# Game loop
 running = True
 while running:
-    # Looks at events
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
-        # Check for event type KEYBOARD
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 running = False
@@ -165,17 +217,38 @@ while running:
             elif event.key == pygame.K_DOWN:
                 player.down()
 
-    # Clear screen
-    screen.fill((255, 255, 255))
+    screen.fill((255, 255, 255))  # Clear the screen
 
-    # Move and render Sprites
+    # Move and render all sprites
     for entity in all_sprites:
         entity.move()
         entity.render(screen)
 
-    # Update the window
-    pygame.display.flip()
-    # Tick the clock!
-    clock.tick(60)
+    # Move and render fruit sprites
+    for fruit in fruit_sprites:
+        fruit.move()
+        fruit.render(screen)
+
+    # Check for collisions between player and fruit sprites
+    fruit_collision = pygame.sprite.spritecollideany(player, fruit_sprites)
+    if fruit_collision:
+        fruit_collision.reset()
+        player_score += 1
+        # Increase the speed of fruits
+        for fruit in fruit_sprites:
+            fruit.dy += 0.5  # Increment the speed
+
+    # Check collision between player and bomb
+    if pygame.sprite.collide_rect(player, bomb):
+        # Reset game objects
+        player_score = 0
+        for fruit in fruit_sprites:
+            fruit.dy = 2  # Reset fruit speed
+            fruit.reset()
+        bomb.reset()
+        player.reset()
+
+    pygame.display.flip()  # Update the window
+    clock.tick(60)  # Control frame rate
 
 pygame.quit()
